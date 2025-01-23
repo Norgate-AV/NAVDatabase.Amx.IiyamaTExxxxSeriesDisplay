@@ -55,6 +55,7 @@ constant char COMMAND_HEADER[3] = ':01'
 
 constant integer POWER_STATE_ON     = 1
 constant integer POWER_STATE_OFF    = 2
+constant integer POWER_STATE_FULL_OFF = 3
 
 constant integer INPUT_HDMI_1    = 1
 constant integer INPUT_HDMI_2    = 2
@@ -139,7 +140,7 @@ DEFINE_MUTUALLY_EXCLUSIVE
 (* EXAMPLE: DEFINE_FUNCTION <RETURN_TYPE> <NAME> (<PARAMETERS>) *)
 (* EXAMPLE: DEFINE_CALL '<NAME>' (<PARAMETERS>) *)
 define_function Send(char cPayload[]) {
-    NAVLog(NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_TO, dvPort, cPayload))
+    NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_TO, dvPort, cPayload))
     send_string dvPort, "cPayload"
 }
 
@@ -169,7 +170,19 @@ define_function TimeOut() {
 
 define_function SetPower(integer iParam) {
     switch (iParam) {
-        case POWER_STATE_ON: { Send(Build('S', '0', '001')) }
+        case POWER_STATE_ON: {
+            switch (iActualPower) {
+                case POWER_STATE_FULL_OFF: {
+                    Send(Build('S', '0', '003'))
+                }
+                case POWER_STATE_OFF: {
+                    Send(Build('S', '0', '001'))
+                }
+                default: {
+                    Send(Build('S', '0', '003'))
+                }
+            }
+        }
         case POWER_STATE_OFF: { Send(Build('S', '0', '000')) }
     }
 }
@@ -207,9 +220,9 @@ define_function Process() {
 
         select {
             active (NAVStartsWith(cTemp, COMMAND_HEADER)): {
-                stack_var char cType[NAV_MAX_CHARS]
+                stack_var char cType
 
-                NAVLog(NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_PARSING_STRING_FROM, dvPort, cTemp))
+                NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_PARSING_STRING_FROM, dvPort, cTemp))
 
                 cTemp = NAVStripCharsFromRight(cTemp, 1)    //Remove CR
                 cTemp = NAVStripCharsFromLeft(cTemp, 3)    //Remove HEADER
@@ -218,7 +231,7 @@ define_function Process() {
 
                 switch (cType) {
                     case 'r': {
-                        stack_var char cCmd[NAV_MAX_CHARS]
+                        stack_var char cCmd
 
                         cCmd = get_buffer_char(cTemp)
 
@@ -230,6 +243,12 @@ define_function Process() {
                                     }
                                     case '001': {
                                         iActualPower = POWER_STATE_ON
+                                    }
+                                    case '002': {
+                                        iActualPower = POWER_STATE_FULL_OFF
+                                    }
+                                    case '003': {
+
                                     }
                                 }
 
@@ -342,7 +361,7 @@ data_event[dvPort] {
 
         TimeOut()
 
-        NAVLog(NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_FROM, dvPort, data.text))
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_FROM, dvPort, data.text))
         if (!iSemaphore) { Process() }
     }
 }
@@ -353,7 +372,7 @@ data_event[vdvObject] {
         stack_var char cCmdHeader[NAV_MAX_CHARS]
         stack_var char cCmdParam[3][NAV_MAX_CHARS]
 
-        NAVLog(NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_COMMAND_FROM, data.device, data.text))
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_COMMAND_FROM, data.device, data.text))
 
         cCmdHeader = DuetParseCmdHeader(data.text)
         cCmdParam[1] = DuetParseCmdParam(data.text)
@@ -432,6 +451,7 @@ channel_event[vdvObject, 0] {
                     switch (iActualPower) {
                         case POWER_STATE_ON: { iRequiredPower = POWER_STATE_OFF; iRequiredInput = 0; Drive() }
                         case POWER_STATE_OFF: { iRequiredPower = POWER_STATE_ON; Drive() }
+                        case POWER_STATE_FULL_OFF: { iRequiredPower = POWER_STATE_ON; Drive() }
                     }
                 }
             }
