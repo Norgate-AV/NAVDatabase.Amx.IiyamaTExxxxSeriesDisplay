@@ -7,6 +7,8 @@ MODULE_NAME='mIiyamaTExxxxSeriesDisplay'    (
 #include 'NAVFoundation.ModuleBase.axi'
 #include 'NAVFoundation.Math.axi'
 #include 'NAVFoundation.ArrayUtils.axi'
+#include 'NAVFoundation.TimelineUtils.axi'
+#include 'NAVFoundation.ErrorLogUtils.axi'
 
 /*
  _   _                       _          ___     __
@@ -50,6 +52,7 @@ DEFINE_DEVICE
 DEFINE_CONSTANT
 
 constant long TL_DRIVE    = 1
+constant long TL_DRIVE_INTERVAL[] = { 200 }
 
 constant char COMMAND_HEADER[3] = ':01'
 
@@ -103,6 +106,7 @@ DEFINE_TYPE
 (*               VARIABLE DEFINITIONS GO BELOW             *)
 (***********************************************************)
 DEFINE_VARIABLE
+
 volatile integer iLoop
 
 volatile integer iPollSequence = GET_POWER
@@ -117,12 +121,10 @@ volatile integer iActualInput
 volatile integer iActualAudioMute
 volatile sinteger siActualVolume
 
-volatile long ltDrive[] = { 200 }
-
-volatile integer iSemaphore
+volatile char iSemaphore = false
 volatile char cRxBuffer[NAV_MAX_BUFFER]
 
-volatile integer iCommandBusy
+volatile char iCommandBusy = false
 
 (***********************************************************)
 (*               LATCHING DEFINITIONS GO BELOW             *)
@@ -139,8 +141,15 @@ DEFINE_MUTUALLY_EXCLUSIVE
 (***********************************************************)
 (* EXAMPLE: DEFINE_FUNCTION <RETURN_TYPE> <NAME> (<PARAMETERS>) *)
 (* EXAMPLE: DEFINE_CALL '<NAME>' (<PARAMETERS>) *)
+
 define_function Send(char cPayload[]) {
-    NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_TO, dvPort, cPayload))
+    if (dvPort.NUMBER == 0) {
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+                        NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_TO,
+                                                    dvPort,
+                                                    cPayload))
+    }
+
     send_string dvPort, "cPayload"
 }
 
@@ -222,7 +231,12 @@ define_function Process() {
             active (NAVStartsWith(cTemp, COMMAND_HEADER)): {
                 stack_var char cType
 
-                NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_PARSING_STRING_FROM, dvPort, cTemp))
+                if (dvPort.NUMBER == 0) {
+                    NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+                                    NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_PARSING_STRING_FROM,
+                                                                dvPort,
+                                                                cTemp))
+                }
 
                 cTemp = NAVStripCharsFromRight(cTemp, 1)    //Remove CR
                 cTemp = NAVStripCharsFromLeft(cTemp, 3)    //Remove HEADER
@@ -252,6 +266,7 @@ define_function Process() {
                                     }
                                 }
 
+                                UpdateFeedback()
                                 iPollSequence = GET_POWER
                             }
                             case ':': {
@@ -276,6 +291,7 @@ define_function Process() {
                                     }
                                 }
 
+                                UpdateFeedback()
                                 iPollSequence = GET_POWER
                             }
                         }
@@ -333,6 +349,12 @@ define_function Drive() {
 }
 
 
+define_function UpdateFeedback() {
+    [vdvObject, VOL_MUTE_FB] = (iActualAudioMute == AUDIO_MUTE_ON)
+    [vdvObject, POWER_FB] = (iActualPower == POWER_STATE_ON)
+}
+
+
 (***********************************************************)
 (*                STARTUP CODE GOES BELOW                  *)
 (***********************************************************)
@@ -353,7 +375,10 @@ data_event[dvPort] {
         NAVCommand(data.device, "'CHARDM-0'")
         NAVCommand(data.device, "'HSOFF'")
 
-        NAVTimelineStart(TL_DRIVE, ltDrive, TIMELINE_ABSOLUTE, TIMELINE_REPEAT)
+        NAVTimelineStart(TL_DRIVE,
+                            TL_DRIVE_INTERVAL,
+                            TIMELINE_ABSOLUTE,
+                            TIMELINE_REPEAT)
     }
     string: {
         [vdvObject, DEVICE_COMMUNICATING] = true
@@ -361,7 +386,13 @@ data_event[dvPort] {
 
         TimeOut()
 
-        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_FROM, dvPort, data.text))
+        if (data.device.number == 0) {
+            NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+                        NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_FROM,
+                                                    dvPort,
+                                                    data.text))
+        }
+
         if (!iSemaphore) { Process() }
     }
 }
@@ -480,14 +511,7 @@ channel_event[vdvObject, 0] {
 
 timeline_event[TL_DRIVE] { Drive() }
 
-
-timeline_event[TL_NAV_FEEDBACK] {
-    [vdvObject, VOL_MUTE_FB] = (iActualAudioMute == AUDIO_MUTE_ON)
-    [vdvObject, POWER_FB] = (iActualPower == POWER_STATE_ON)
-}
-
 (***********************************************************)
 (*                     END OF PROGRAM                      *)
 (*        DO NOT PUT ANY CODE BELOW THIS COMMENT           *)
 (***********************************************************)
-
