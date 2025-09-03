@@ -159,6 +159,7 @@ jobs:
                 "owner": "${{ github.repository_owner }}",
                 "ref": "${{ github.ref }}",
                 "sha": "${{ steps.release.outputs.new_release_git_head }}",
-                "tag": "${{ steps.release.outputs.new_release_git_tag }}"
+                "tag": "${{ steps.release.outputs.new_release_git_tag }}",
+                "branch": "master"
               }
             }
