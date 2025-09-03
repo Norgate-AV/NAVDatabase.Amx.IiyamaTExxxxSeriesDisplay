@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0](https://github.com/Norgate-AV/NAVDatabase.Amx.IiyamaTExxxxSeriesDisplay/compare/v1.0.0...v1.1.0) (2025-09-03)
+
+### 🌟 Features
+
+- update for NAVFoundation v2+ ([d07e80d](https://github.com/Norgate-AV/NAVDatabase.Amx.IiyamaTExxxxSeriesDisplay/commit/d07e80d297e3bef8055169ea2dbd0050275a6cef))
+
 ## 1.0.0 (2025-01-23)
 
 ### 🌟 Features
